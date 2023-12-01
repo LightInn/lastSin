@@ -5,12 +5,12 @@ use winapi::um::winuser::{FindWindowA, GetWindowRect, GetDC, ReleaseDC, GetWindo
 use winapi::shared::windef::{HWND, RECT};
 use std::ptr::null_mut;
 use std::time::Instant;
-use opencv::core::{Mat, MatTraitConstManual};
+use opencv::core::{Mat, MatTrait, MatTraitConstManual};
 use winapi::ctypes::{c_int, wchar_t};
 use winapi::shared::minwindef::{BOOL, LPARAM};
 
 
-fn get_img() -> Mat {
+unsafe fn get_img() -> Mat {
     let mut hwnd: Option<HWND> = None;
     let hwnd_ptr: LPARAM = &mut hwnd as *mut Option<HWND> as LPARAM;
 
@@ -67,17 +67,24 @@ fn get_img() -> Mat {
         (width, height, buf)
     };
 
-    // Convert the buffer variable to a Mat in BGRA format
-    let original_image: Mat = unsafe {
-        let mat = Mat::new_rows_cols_with_data(
-            height as i32,
-            width as i32,
-            core::CV_8UC4,
-            buf.as_ptr() as *mut std::ffi::c_void,
-            core::Mat_AUTO_STEP,
-        ).unwrap();
-        mat
-    };
+    let mut original_image: Mat = Mat::new_rows_cols(height as i32, width as i32, core::CV_8UC4).unwrap();
+
+    // Copy data from `buf` to `original_image`
+    for row in 0..height {
+        for col in 0..width {
+            let index = (row * width + col) as usize;
+            let rgba = buf[index];
+            let r = ((rgba >> 16) & 0xff) as u8;
+            let g = ((rgba >> 8) & 0xff) as u8;
+            let b = (rgba & 0xff) as u8;
+            let a = ((rgba >> 24) & 0xff) as u8;
+            let pixel = core::Vec4b::from([b, g, r, a]);
+
+            let pixel_ptr = original_image.ptr_mut(row as i32).unwrap() as *mut core::Vec4b;
+            *pixel_ptr = pixel;
+        }
+    }
+
 
     original_image
 }
@@ -88,7 +95,7 @@ fn main() {
 
     loop {
         let now = Instant::now();
-        let img = get_img();
+        let img = unsafe { get_img() };
 
         // Get the dimensions of the image
         let size = img.size().unwrap();
@@ -111,7 +118,7 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     let mut title: [u16; 256] = [0; 256];
     GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
 
-    let target_title = std::ffi::OsStr::new("Blender")
+    let target_title = std::ffi::OsStr::new("My Password - KeePass")
         .encode_wide()
         .chain(std::iter::once(0))
         .collect::<Vec<u16>>();
